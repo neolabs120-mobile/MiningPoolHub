@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:ui';
+import 'package:CoinMiner/DataModel.dart';
 import 'package:CoinMiner/UpbitModel.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +10,16 @@ import 'dart:developer';
 
 void main() {
   runApp(CoinminerMain());
+}
+
+class CreditModel {
+  dynamic date;
+  dynamic amount;
+
+  CreditModel(dynamic date, dynamic amount) {
+    this.date = date;
+    this.amount = amount;
+  }
 }
 
 class CoinminerMain extends StatelessWidget {
@@ -37,6 +49,20 @@ class Miner extends StatefulWidget {
   Coinminer createState() => Coinminer(apikey: apikey);
 }
 
+class PersonTile extends StatelessWidget {
+  PersonTile(this._person);
+
+  final CreditModel _person;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      title: Text(_person.date),
+      subtitle: Text(_person.amount.toString() + "원"),
+    );
+  }
+}
+
 class Coinminer extends State<Miner> {
   var apikey;
   Coinminer({this.apikey});
@@ -44,9 +70,11 @@ class Coinminer extends State<Miner> {
   Future<Model> futurecoin;
   Future<UpbitModel> upbit;
   Future<String> result;
+  Future<DataModel> datamodel;
+  Future<List<CreditModel>> creditmodel;
 
   Future<Model> getinfo() async {
-    String url = "https://miningpoolhub.com/index.php?page=api&action=getuserallbalances&api_key=" + apikey;
+    String url = "https://miningpoolhub.com/index.php?page=api&action=getuserallbalances&api_key=4f229689857dd1c7e97d132ec22d96245e98c4ab860846ef08116b9205d8e462";
     final response = await http.get(url);
 
     if (response.statusCode == 200) {
@@ -79,9 +107,23 @@ class Coinminer extends State<Miner> {
     }
   }
 
+  Future<DataModel> getdateinfo() async {
+    String networkurl = "https://ethereum.miningpoolhub.com/index.php?page=api&action=getdashboarddata&api_key=4f229689857dd1c7e97d132ec22d96245e98c4ab860846ef08116b9205d8e462";
+    final response = await http.get(networkurl);
+
+    if (response.statusCode == 200) {
+      log(response.body);
+      var responsestring2 = response.body;
+      return DataModel.fromJson(jsonDecode(responsestring2));
+    } else {
+      throw Exception('Failed to load album');
+    }
+  }
+
   Future<String> getresult() async {
     Model model;
     UpbitModel upbitmodel;
+
     model = await getinfo();
     upbitmodel = await getupbitinfo();
 
@@ -96,12 +138,29 @@ class Coinminer extends State<Miner> {
     return (model.getuserallbalances.data.elementAt(index).confirmed * upbitmodel.tradePrice).round().toString();
   }
 
+  Future<List<CreditModel>> getcredit() async {
+    DataModel dataModel;
+    UpbitModel upbitmodel;
+    List<CreditModel> creditmodel = new List<CreditModel>();
+
+    dataModel = await getdateinfo();
+    upbitmodel = await getupbitinfo();
+
+    for(int i = 0; i < dataModel.getdashboarddata.data.recentCredits.length; i++) {
+      creditmodel.add(CreditModel(dataModel.getdashboarddata.data.recentCredits.elementAt(i).date, (dataModel.getdashboarddata.data.recentCredits.elementAt(i).amount * upbitmodel.tradePrice).round()));
+    }
+
+    return creditmodel;
+  }
+
   @override
   void initState() {
     super.initState();
     futurecoin = getinfo();
     upbit = getupbitinfo();
     result = getresult();
+    datamodel = getdateinfo();
+    creditmodel = getcredit();
   }
 
   @override
@@ -110,20 +169,47 @@ class Coinminer extends State<Miner> {
         appBar: AppBar(
           title: Text(widget.title),
         ),
-        body: Center(
-          child: FutureBuilder<String>(
-            future: result,
-            builder: (context, snapshot) {
-              if (snapshot.hasData) {
-                //return Text(snapshot.data.getuserallbalances.data.elementAt(1).confirmed.toString());
-                return Text("현재 채굴한 이더리움 원화 환산 : " + snapshot.data + "원");
-              } else if (snapshot.hasError) {
-                return Text("${snapshot.error}");
-              }
-              // By default, show a loading spinner.
-              return CircularProgressIndicator();
-            },
-          ),
+        body: Column(
+          children: [
+            FutureBuilder<String>(
+              future: result,
+              builder: (context, snapshot) {
+                if (snapshot.hasData) {
+                  //return Text(snapshot.data.getuserallbalances.data.elementAt(1).confirmed.toString());
+                  return Text("현재 채굴한 이더리움 원화 환산 : " + snapshot.data + "원", style: TextStyle(
+                      color: Colors.black,
+                      letterSpacing: 2.0,
+                      fontSize: 20.0,
+                      fontWeight: FontWeight.bold
+                  ));
+                } else if (snapshot.hasError) {
+                  return Text("${snapshot.error}");
+                }
+                // By default, show a loading spinner.
+                return CircularProgressIndicator();
+              },
+            ),
+            FutureBuilder<List<CreditModel>>(
+              future: creditmodel,
+              builder: (context, snapshot) {
+                if (snapshot.hasData) {
+                  return Expanded(
+                      child: ListView.builder(
+                        itemCount: snapshot.data.length,
+                        itemBuilder: (BuildContext context, int index) {
+                          return PersonTile(snapshot.data.elementAt(index));
+                        },
+                      )
+                  );
+                } else if (snapshot.hasError) {
+                  log(snapshot.error);
+                  return Text("${snapshot.error}");
+                }
+                // By default, show a loading spinner.
+                return CircularProgressIndicator();
+              },
+            ),
+          ],
         )
     );
   }
